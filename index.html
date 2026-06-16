@@ -528,11 +528,36 @@ function Settings({tools,setTools,machines,setMachines,materials,setMats,reasons
 
 function ToolMaster({tools,setTools}){
   const [ni,sni]=useState("");const [nc,snc]=useState("");const [nl,snl]=useState("");
+  const [editId,setEditId]=useState(null);
+  const [editCost,setEditCost]=useState("");
+  const [editLife,setEditLife]=useState("");
+
   const add=()=>{
     if(!ni||!nc||!nl||tools.find(t=>t.id===ni))return;
     setTools([...tools,{id:ni,cost:Number(nc),life:Number(nl)}]);
     sni("");snc("");snl("");
   };
+
+  const startEdit=(t)=>{
+    setEditId(t.id);
+    setEditCost(t.cost.toString());
+    setEditLife(t.life.toString());
+  };
+
+  const saveEdit=()=>{
+    if(!editCost||!editLife)return;
+    setTools(tools.map(t=>t.id===editId?{...t,cost:Number(editCost),life:Number(editLife)}:t));
+    setEditId(null);
+    setEditCost("");
+    setEditLife("");
+  };
+
+  const cancelEdit=()=>{
+    setEditId(null);
+    setEditCost("");
+    setEditLife("");
+  };
+
   return(
     <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}}>
       <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>Tool Master</div>
@@ -548,11 +573,42 @@ function ToolMaster({tools,setTools}){
           {tools.map((t,i)=>(
             <tr key={i} style={{borderBottom:`1px solid ${C.border}22`}}>
               <td style={{padding:"8px 10px",fontWeight:700,color:C.accent}}>{t.id}</td>
-              <td style={{padding:"8px 10px"}}>${t.cost}</td>
-              <td style={{padding:"8px 10px"}}>{t.life}h</td>
               <td style={{padding:"8px 10px"}}>
-                <button onClick={()=>setTools(tools.filter(x=>x.id!==t.id))}
-                  style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>×</button>
+                {editId===t.id?(
+                  <input value={editCost} onChange={e=>setEditCost(e.target.value)} type="number"
+                    style={{background:C.surface,color:C.text,border:`1px solid ${C.accent}`,borderRadius:6,
+                      padding:"4px 8px",fontSize:13,width:70}}/>
+                ):(
+                  <span>${t.cost}</span>
+                )}
+              </td>
+              <td style={{padding:"8px 10px"}}>
+                {editId===t.id?(
+                  <input value={editLife} onChange={e=>setEditLife(e.target.value)} type="number"
+                    style={{background:C.surface,color:C.text,border:`1px solid ${C.accent}`,borderRadius:6,
+                      padding:"4px 8px",fontSize:13,width:70}}/>
+                ):(
+                  <span>{t.life}h</span>
+                )}
+              </td>
+              <td style={{padding:"8px 10px"}}>
+                {editId===t.id?(
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={saveEdit}
+                      style={{background:C.green,color:"#fff",border:"none",borderRadius:6,
+                        padding:"4px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>✓</button>
+                    <button onClick={cancelEdit}
+                      style={{background:C.red,color:"#fff",border:"none",borderRadius:6,
+                        padding:"4px 10px",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕</button>
+                  </div>
+                ):(
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>startEdit(t)}
+                      style={{background:"none",border:"none",color:C.accent,cursor:"pointer",fontSize:14,fontWeight:600}}>✎</button>
+                    <button onClick={()=>setTools(tools.filter(x=>x.id!==t.id))}
+                      style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>×</button>
+                  </div>
+                )}
               </td>
             </tr>
           ))}
