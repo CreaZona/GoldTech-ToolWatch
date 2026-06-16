@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>GoldTech.ToolWatch</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0D0F14;color:#E8EAF0;font-family:'Segoe UI',system-ui,sans-serif}
+select,input,button{font-family:inherit}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#141720}
+::-webkit-scrollbar-thumb{background:#252A3A;border-radius:3px}
+table{border-collapse:collapse;width:100%}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo} = React;
+
+const C = {
+  bg:"#0D0F14",surface:"#141720",card:"#1A1E2B",border:"#252A3A",
+  accent:"#F5A623",text:"#E8EAF0",muted:"#6B7280",
+  green:"#22C55E",yellow:"#EAB308",orange:"#F97316",red:"#EF4444",purple:"#A855F7"
+};
+const SC = {Green:C.green,Yellow:C.yellow,Orange:C.orange,Red:C.red,Purple:C.purple};
+const STATUS_ORDER = ["Green","Yellow","Orange","Red","Purple"];
+
+const DEF_MACHINES  = ["Haas VF2","Doosan Puma","Mazak Integrex","DMG Mori","Okuma"];
+const DEF_MATERIALS = ["Aluminum","Stainless Steel","Titanium","Brass","Copper","Delrin","PEEK","Inconel","Mild Steel","Tool Steel"];
+const DEF_REASONS   = ["Worn","Broken","Preventive","Chipped","End of Life"];
+const DEF_OPERATORS = ["Alex","Boris","David","Igor","Moshe","Sergey"];
+const DEF_TOOLS     = [
+  {id:"14D",cost:85,life:48},{id:"15B",cost:120,life:72},
+  {id:"22A",cost:95,life:36},{id:"31C",cost:60,life:24},{id:"10E",cost:150,life:96}
+];
+const now = Date.now();
+const h = n => now - n*3600000;
+const SEED = [
+  {id:1,machine:"Haas VF2",      job:"JO-24581",material:"Titanium",       tool:"14D",cost:85, reason:"Worn",       operator:"Alex",  parts:250,ts:h(55),hoursElapsed:55},
+  {id:2,machine:"Haas VF2",      job:"JO-24581",material:"Titanium",       tool:"22A",cost:95, reason:"Broken",     operator:"Boris", parts:180,ts:h(29),hoursElapsed:29},
+  {id:3,machine:"Doosan Puma",   job:"JO-24582",material:"Stainless Steel",tool:"15B",cost:120,reason:"Preventive", operator:"David", parts:410,ts:h(7), hoursElapsed:7},
+  {id:4,machine:"Mazak Integrex",job:"JO-24583",material:"Aluminum",       tool:"31C",cost:60, reason:"Worn",       operator:"Igor",  parts:620,ts:h(22),hoursElapsed:22},
+  {id:5,machine:"Haas VF2",      job:"JO-24584",material:"Stainless Steel",tool:"10E",cost:150,reason:"End of Life", operator:"Moshe", parts:300,ts:h(100),hoursElapsed:100},
+  {id:6,machine:"Doosan Puma",   job:"JO-24582",material:"Aluminum",       tool:"14D",cost:85, reason:"Chipped",    operator:"Alex",  parts:190,ts:h(38),hoursElapsed:38}
+];
+
+function getStatus(e,l){const p=e/l;if(p<.5)return"Green";if(p<.75)return"Yellow";if(p<1)return"Orange";if(p<1.3)return"Red";return"Purple";}
+function fmtDate(ts){return new Date(ts).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});}
+function fmtTime(ts){return new Date(ts).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});}
+function fmtMoney(n){return"$"+Number(n).toLocaleString("en-US");}
+
+function useLS(key,def){
+  const [v,sv]=useState(()=>{try{const s=localStorage.getItem(key);return s?JSON.parse(s):def;}catch{return def;}});
+  const set=val=>{sv(val);try{localStorage.setItem(key,JSON.stringify(val));}catch{}};
+  return [v,set];
+}
+
+// ── UI Atoms ──
+const Badge=({status})=>(
+  <span style={{display:"inline-block",padding:"2px 10px",borderRadius:99,
+    background:SC[status]+"22",color:SC[status],border:`1px solid ${SC[status]}55`,
+    fontSize:12,fontWeight:600,letterSpacing:.5}}>{status}</span>
+);
+const Dot=({status,size=10})=>(
+  <span style={{display:"inline-block",width:size,height:size,borderRadius:"50%",
+    background:SC[status],boxShadow:`0 0 6px ${SC[status]}`,flexShrink:0}}/>
+);
+const KPI=({label,value,sub,color})=>(
+  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"18px 20px",minWidth:140}}>
+    <div style={{fontSize:11,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div>
+    <div style={{fontSize:26,fontWeight:700,color:color||C.accent,lineHeight:1}}>{value}</div>
+    {sub&&<div style={{fontSize:11,color:C.muted,marginTop:4}}>{sub}</div>}
+  </div>
+);
+const Sel=({value,onChange,opts,placeholder})=>(
+  <select value={value} onChange={e=>onChange(e.target.value)}
+    style={{background:C.surface,color:value?C.text:C.muted,border:`1px solid ${C.border}`,
+      borderRadius:8,padding:"8px 12px",fontSize:13,width:"100%",outline:"none"}}>
+    <option value="">{placeholder}</option>
+    {opts.map(o=><option key={o} value={o}>{o}</option>)}
+  </select>
+);
+const Inp=({value,onChange,placeholder,type="text"})=>(
+  <input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} type={type}
+    style={{background:C.surface,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,
+      padding:"8px 12px",fontSize:13,width:"100%",outline:"none"}}/>
+);
+const Row=({label,children})=>(
+  <div>
+    <div style={{fontSize:12,color:C.muted,marginBottom:5,fontWeight:500}}>{label}</div>
+    {children}
+  </div>
+);
+
+const TABS = ["Dashboard","Log Entry","Live Status","Tool Log","Analytics","Settings"];
+
+// ══ APP ══════════════════════════════════════════════════════════════════════
+function App(){
+  const [logs,    setLogs]    = useLS("gt_logs",    SEED);
+  const [tools,   setTools]   = useLS("gt_tools",   DEF_TOOLS);
+  const [machines,setMachines]= useLS("gt_machines", DEF_MACHINES);
+  const [materials,setMats]   = useLS("gt_materials",DEF_MATERIALS);
+  const [reasons, setReasons] = useLS("gt_reasons",  DEF_REASONS);
+  const [operators,setOps]    = useLS("gt_operators", DEF_OPERATORS);
+  const [tab, setTab]         = useState("Dashboard");
+
+  const liveStatus = useMemo(()=>{
+    const map={};
+    [...logs].sort((a,b)=>a.ts-b.ts).forEach(l=>{
+      const key=`${l.machine}::${l.tool}`;
+      const td=tools.find(t=>t.id===l.tool);
+      const life=td?.life||48;
+      map[key]={...l,life,status:getStatus(l.hoursElapsed,life)};
+    });
+    return Object.values(map);
+  },[logs,tools]);
+
+  return (
+    <div style={{background:C.bg,minHeight:"100vh",color:C.text}}>
+      {/* Header */}
+      <div style={{borderBottom:`1px solid ${C.border}`,padding:"0 24px",
+        display:"flex",alignItems:"center",gap:16,height:56,
+        background:C.surface,position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <svg width="28" height="28" viewBox="0 0 28 28">
+            <polygon points="14,2 26,8 26,20 14,26 2,20 2,8" fill="none" stroke={C.accent} strokeWidth="1.5"/>
+            <polygon points="14,7 21,11 21,17 14,21 7,17 7,11" fill={C.accent} opacity=".15"/>
+            <circle cx="14" cy="14" r="3" fill={C.accent}/>
+          </svg>
+          <span style={{fontWeight:800,fontSize:16,letterSpacing:.5}}>
+            GoldTech<span style={{color:C.accent}}>.</span>ToolWatch
+          </span>
+          <span style={{fontSize:10,color:C.muted,border:`1px solid ${C.border}`,
+            borderRadius:4,padding:"1px 6px",letterSpacing:1,marginLeft:4}}>v1.0</span>
+        </div>
+        <div style={{flex:1}}/>
+        <span style={{fontSize:11,color:C.muted}}>CNC Tool Life &amp; Cost Management</span>
+      </div>
+
+      {/* Nav */}
+      <div style={{display:"flex",gap:2,padding:"0 24px",borderBottom:`1px solid ${C.border}`,
+        background:C.surface,overflowX:"auto"}}>
+        {TABS.map(t=>(
+          <button key={t} onClick={()=>setTab(t)} style={{
+            background:"none",border:"none",color:tab===t?C.accent:C.muted,
+            padding:"12px 16px",fontSize:13,fontWeight:tab===t?700:400,
+            borderBottom:tab===t?`2px solid ${C.accent}`:"2px solid transparent",
+            cursor:"pointer",whiteSpace:"nowrap"}}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <div style={{padding:"24px",maxWidth:1200,margin:"0 auto"}}>
+        {tab==="Dashboard"  &&<Dashboard logs={logs} tools={tools} liveStatus={liveStatus}/>}
+        {tab==="Log Entry"  &&<LogEntry  logs={logs} setLogs={setLogs} tools={tools}
+          machines={machines} materials={materials} reasons={reasons} operators={operators}/>}
+        {tab==="Live Status"&&<LiveStatus liveStatus={liveStatus}/>}
+        {tab==="Tool Log"   &&<ToolLog   logs={logs} setLogs={setLogs} tools={tools}/>}
+        {tab==="Analytics"  &&<Analytics logs={logs}/>}
+        {tab==="Settings"   &&<Settings
+          tools={tools} setTools={setTools}
+          machines={machines} setMachines={setMachines}
+          materials={materials} setMats={setMats}
+          reasons={reasons} setReasons={setReasons}
+          operators={operators} setOps={setOps}/>}
+      </div>
+    </div>
+  );
+}
+
+// ══ DASHBOARD ════════════════════════════════════════════════════════════════
+function Dashboard({logs,tools,liveStatus}){
+  const now2=new Date();
+  const mStart=new Date(now2.getFullYear(),now2.getMonth(),1).getTime();
+  const yStart=new Date(now2.getFullYear(),0,1).getTime();
+  const mLogs=logs.filter(l=>l.ts>=mStart);
+  const yLogs=logs.filter(l=>l.ts>=yStart);
+  const mCost=mLogs.reduce((s,l)=>s+Number(l.cost),0);
+  const yCost=yLogs.reduce((s,l)=>s+Number(l.cost),0);
+  const parts=mLogs.reduce((s,l)=>s+Number(l.parts||0),0);
+  const cpp=parts>0?(mCost/parts).toFixed(2):"—";
+
+  const sc={};liveStatus.forEach(l=>{sc[l.status]=(sc[l.status]||0)+1;});
+
+  const tc={};logs.forEach(l=>{tc[l.tool]=(tc[l.tool]||0)+1;});
+  const mr=Object.entries(tc).sort((a,b)=>b[1]-a[1])[0];
+  const tco={};logs.forEach(l=>{tco[l.tool]=(tco[l.tool]||0)+Number(l.cost);});
+  const me=Object.entries(tco).sort((a,b)=>b[1]-a[1])[0];
+  const lifes=logs.filter(l=>l.hoursElapsed>0);
+  const al=lifes.length?(lifes.reduce((s,l)=>s+l.hoursElapsed,0)/lifes.length).toFixed(1):"—";
+  const crit=liveStatus.filter(l=>["Red","Purple"].includes(l.status));
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:24}}>
+      <div>
+        <h2 style={{margin:0,fontSize:20,fontWeight:700}}>Dashboard</h2>
+        <p style={{margin:"4px 0 0",color:C.muted,fontSize:13}}>Real-time overview of tool health and costs</p>
+      </div>
+
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        {STATUS_ORDER.map(s=>(
+          <div key={s} style={{display:"flex",alignItems:"center",gap:8,background:C.card,
+            border:`1px solid ${SC[s]}44`,borderRadius:10,padding:"10px 18px"}}>
+            <Dot status={s}/><span style={{fontSize:13,color:C.muted}}>{s}</span>
+            <span style={{fontSize:20,fontWeight:700,color:SC[s]}}>{sc[s]||0}</span>
+          </div>
+        ))}
+        <div style={{display:"flex",alignItems:"center",gap:8,background:C.card,
+          border:`1px solid ${C.border}`,borderRadius:10,padding:"10px 18px"}}>
+          <span style={{fontSize:13,color:C.muted}}>Active Tools</span>
+          <span style={{fontSize:20,fontWeight:700}}>{liveStatus.length}</span>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+        <KPI label="Tool Spend This Month" value={fmtMoney(mCost)} color={C.accent}/>
+        <KPI label="Tool Spend This Year"  value={fmtMoney(yCost)} color={C.accent}/>
+        <KPI label="Parts This Month"      value={parts.toLocaleString()} color={C.text}/>
+        <KPI label="Cost Per Part"         value={parts>0?"$"+cpp:"—"} color={C.text}/>
+        <KPI label="Avg Tool Life"         value={al+"h"} color={C.text}/>
+        <KPI label="Most Replaced"         value={mr?.[0]||"—"} sub={mr?.[1]+" replacements"} color={C.yellow}/>
+        <KPI label="Most Expensive"        value={me?.[0]||"—"} sub={fmtMoney(me?.[1]||0)} color={C.orange}/>
+      </div>
+
+      {crit.length>0&&(
+        <div style={{background:"#2A1515",border:`1px solid ${C.red}44`,borderRadius:12,padding:16}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.red,marginBottom:10}}>
+            ⚠️ Attention Required ({crit.length})
+          </div>
+          {crit.map((l,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:12,fontSize:13,marginBottom:6}}>
+              <Dot status={l.status}/>
+              <span style={{color:C.text,fontWeight:600}}>{l.tool}</span>
+              <span style={{color:C.muted}}>on {l.machine}</span>
+              <span style={{color:C.muted}}>— {l.hoursElapsed}h / {l.life}h</span>
+              <Badge status={l.status}/>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══ LOG ENTRY ════════════════════════════════════════════════════════════════
+function LogEntry({logs,setLogs,tools,machines,materials,reasons,operators}){
+  const E={machine:"",job:"",material:"",tool:"",reason:"",operator:"",parts:"",hoursElapsed:""};
+  const [f,sf]=useState(E);
+  const [saved,setSaved]=useState(false);
+  const F=k=>v=>sf(p=>({...p,[k]:v}));
+  const td=tools.find(t=>t.id===f.tool);
+
+  const save=()=>{
+    if(!f.machine||!f.tool||!f.reason||!f.operator)return;
+    setLogs([...logs,{
+      id:Date.now(),machine:f.machine,job:f.job,material:f.material,
+      tool:f.tool,cost:td?.cost||0,reason:f.reason,operator:f.operator,
+      parts:Number(f.parts)||0,ts:Date.now(),hoursElapsed:Number(f.hoursElapsed)||0
+    }]);
+    sf(E);setSaved(true);setTimeout(()=>setSaved(false),2500);
+  };
+
+  return(
+    <div style={{maxWidth:560}}>
+      <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:700}}>Log Tool Replacement</h2>
+      <p style={{color:C.muted,fontSize:13,margin:"0 0 24px"}}>Record a new tool change event</p>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        <Row label="Machine *"><Sel value={f.machine} onChange={F("machine")} opts={machines} placeholder="Select machine"/></Row>
+        <Row label="Job Order"><Inp value={f.job} onChange={F("job")} placeholder="e.g. JO-24581"/></Row>
+        <Row label="Material"><Sel value={f.material} onChange={F("material")} opts={materials} placeholder="Select material"/></Row>
+        <Row label="Tool *">
+          <Sel value={f.tool} onChange={F("tool")} opts={tools.map(t=>t.id)} placeholder="Select tool"/>
+          {td&&<div style={{fontSize:11,color:C.muted,marginTop:4}}>Cost: {fmtMoney(td.cost)} · Life: {td.life}h</div>}
+        </Row>
+        <Row label="Hours on Tool"><Inp value={f.hoursElapsed} onChange={F("hoursElapsed")} placeholder="e.g. 46" type="number"/></Row>
+        <Row label="Reason *"><Sel value={f.reason} onChange={F("reason")} opts={reasons} placeholder="Select reason"/></Row>
+        <Row label="Operator *"><Sel value={f.operator} onChange={F("operator")} opts={operators} placeholder="Select operator"/></Row>
+        <Row label="Parts Produced"><Inp value={f.parts} onChange={F("parts")} placeholder="e.g. 250" type="number"/></Row>
+      </div>
+      <div style={{marginTop:24,display:"flex",gap:12,alignItems:"center"}}>
+        <button onClick={save} style={{background:C.accent,color:"#000",border:"none",borderRadius:8,
+          padding:"10px 28px",fontSize:14,fontWeight:700,cursor:"pointer"}}>Save Entry</button>
+        {saved&&<span style={{color:C.green,fontSize:13}}>✓ Saved</span>}
+      </div>
+    </div>
+  );
+}
+
+// ══ LIVE STATUS ══════════════════════════════════════════════════════════════
+function LiveStatus({liveStatus}){
+  const sorted=[...liveStatus].sort((a,b)=>{
+    const o=["Purple","Red","Orange","Yellow","Green"];
+    return o.indexOf(a.status)-o.indexOf(b.status);
+  });
+  return(
+    <div>
+      <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:700}}>Live Status</h2>
+      <p style={{color:C.muted,fontSize:13,margin:"0 0 20px"}}>Current state of each tool on each machine</p>
+      <div style={{overflowX:"auto"}}>
+        <table style={{fontSize:13}}>
+          <thead>
+            <tr style={{borderBottom:`1px solid ${C.border}`}}>
+              {["Status","Machine","Tool","Hours","Life","Usage","Last Job","Operator","Date"].map(h=>(
+                <th key={h} style={{textAlign:"left",padding:"8px 12px",color:C.muted,fontWeight:500,whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((l,i)=>{
+              const pct=Math.min(100,Math.round((l.hoursElapsed/l.life)*100));
+              return(
+                <tr key={i} style={{borderBottom:`1px solid ${C.border}22`,background:i%2===0?"transparent":C.card+"44"}}>
+                  <td style={{padding:"10px 12px"}}><Badge status={l.status}/></td>
+                  <td style={{padding:"10px 12px"}}>{l.machine}</td>
+                  <td style={{padding:"10px 12px",fontWeight:700,color:C.accent}}>{l.tool}</td>
+                  <td style={{padding:"10px 12px"}}>{l.hoursElapsed}h</td>
+                  <td style={{padding:"10px 12px",color:C.muted}}>{l.life}h</td>
+                  <td style={{padding:"10px 12px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{width:60,height:6,background:C.border,borderRadius:3}}>
+                        <div style={{width:`${pct}%`,height:"100%",background:SC[l.status],borderRadius:3}}/>
+                      </div>
+                      <span style={{color:SC[l.status],fontSize:12}}>{pct}%</span>
+                    </div>
+                  </td>
+                  <td style={{padding:"10px 12px",color:C.muted}}>{l.job||"—"}</td>
+                  <td style={{padding:"10px 12px",color:C.muted}}>{l.operator}</td>
+                  <td style={{padding:"10px 12px",color:C.muted,whiteSpace:"nowrap"}}>{fmtDate(l.ts)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {sorted.length===0&&<p style={{color:C.muted,textAlign:"center",padding:40}}>No tool data yet.</p>}
+      </div>
+    </div>
+  );
+}
+
+// ══ TOOL LOG ═════════════════════════════════════════════════════════════════
+function ToolLog({logs,setLogs,tools}){
+  const [fM,sfM]=useState("");const [fT,sfT]=useState("");const [fR,sfR]=useState("");
+  const ms=[...new Set(logs.map(l=>l.machine))];
+  const ts2=[...new Set(logs.map(l=>l.tool))];
+  const rs=[...new Set(logs.map(l=>l.reason))];
+  const filtered=[...logs].sort((a,b)=>b.ts-a.ts)
+    .filter(l=>(!fM||l.machine===fM)&&(!fT||l.tool===fT)&&(!fR||l.reason===fR));
+
+  return(
+    <div>
+      <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:700}}>Tool Log</h2>
+      <p style={{color:C.muted,fontSize:13,margin:"0 0 16px"}}>Complete history of all tool changes</p>
+      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+        <div style={{minWidth:150}}><Sel value={fM} onChange={sfM} opts={ms} placeholder="All Machines"/></div>
+        <div style={{minWidth:120}}><Sel value={fT} onChange={sfT} opts={ts2} placeholder="All Tools"/></div>
+        <div style={{minWidth:130}}><Sel value={fR} onChange={sfR} opts={rs} placeholder="All Reasons"/></div>
+        {(fM||fT||fR)&&<button onClick={()=>{sfM("");sfT("");sfR("");}} style={{
+          background:"none",border:`1px solid ${C.border}`,color:C.muted,
+          borderRadius:8,padding:"8px 14px",fontSize:12,cursor:"pointer"}}>Clear</button>}
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{fontSize:13}}>
+          <thead>
+            <tr style={{borderBottom:`1px solid ${C.border}`}}>
+              {["Date","Time","Machine","Job","Material","Tool","Hours","Cost","Reason","Operator","Parts","Status",""].map(h=>(
+                <th key={h} style={{textAlign:"left",padding:"8px 12px",color:C.muted,fontWeight:500,whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((l,i)=>{
+              const td=tools.find(t=>t.id===l.tool);
+              const st=getStatus(l.hoursElapsed,td?.life||48);
+              return(
+                <tr key={l.id} style={{borderBottom:`1px solid ${C.border}22`,background:i%2===0?"transparent":C.card+"44"}}>
+                  <td style={{padding:"9px 12px",color:C.muted,whiteSpace:"nowrap"}}>{fmtDate(l.ts)}</td>
+                  <td style={{padding:"9px 12px",color:C.muted}}>{fmtTime(l.ts)}</td>
+                  <td style={{padding:"9px 12px"}}>{l.machine}</td>
+                  <td style={{padding:"9px 12px",color:C.muted}}>{l.job||"—"}</td>
+                  <td style={{padding:"9px 12px",color:C.muted}}>{l.material||"—"}</td>
+                  <td style={{padding:"9px 12px",fontWeight:700,color:C.accent}}>{l.tool}</td>
+                  <td style={{padding:"9px 12px"}}>{l.hoursElapsed}h</td>
+                  <td style={{padding:"9px 12px"}}>{fmtMoney(l.cost)}</td>
+                  <td style={{padding:"9px 12px",color:C.muted}}>{l.reason}</td>
+                  <td style={{padding:"9px 12px",color:C.muted}}>{l.operator}</td>
+                  <td style={{padding:"9px 12px",color:C.muted}}>{l.parts||0}</td>
+                  <td style={{padding:"9px 12px"}}><Badge status={st}/></td>
+                  <td style={{padding:"9px 12px"}}>
+                    <button onClick={()=>setLogs(logs.filter(x=>x.id!==l.id))}
+                      style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>×</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {filtered.length===0&&<p style={{color:C.muted,textAlign:"center",padding:40}}>No entries found.</p>}
+      </div>
+      <div style={{fontSize:12,color:C.muted,marginTop:12}}>{filtered.length} entries</div>
+    </div>
+  );
+}
+
+// ══ ANALYTICS ════════════════════════════════════════════════════════════════
+function Analytics({logs}){
+  const grp=key=>{
+    const m={};
+    logs.forEach(l=>{
+      const k=l[key]||"Unknown";
+      if(!m[k])m[k]={label:k,cost:0,count:0,parts:0};
+      m[k].cost+=Number(l.cost);m[k].count++;m[k].parts+=Number(l.parts||0);
+    });
+    return Object.values(m).sort((a,b)=>b.cost-a.cost);
+  };
+  const byM=grp("machine"),byMat=grp("material"),byT=grp("tool"),byJ=grp("job");
+  const monthly={};
+  logs.forEach(l=>{
+    const d=new Date(l.ts);
+    const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    if(!monthly[k])monthly[k]={label:k,cost:0};
+    monthly[k].cost+=Number(l.cost);
+  });
+  const mArr=Object.values(monthly).sort((a,b)=>a.label.localeCompare(b.label));
+  const mx=arr=>Math.max(...arr.map(r=>r.cost),1);
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:28}}>
+      <div>
+        <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:700}}>Analytics</h2>
+        <p style={{color:C.muted,fontSize:13,margin:0}}>Cost breakdown and usage patterns</p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:20}}>
+        <BChart title="Cost by Machine"   rows={byM}   max={mx(byM)}/>
+        <BChart title="Cost by Material"  rows={byMat} max={mx(byMat)}/>
+        <BChart title="Cost by Tool"      rows={byT}   max={mx(byT)} showCount/>
+        <BChart title="Cost by Job Order" rows={byJ}   max={mx(byJ)}/>
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:16}}>Monthly Tool Cost Trend</div>
+        {mArr.length===0?<p style={{color:C.muted,fontSize:13}}>No data yet.</p>:(
+          <div style={{display:"flex",alignItems:"flex-end",gap:12,height:120}}>
+            {mArr.map((m,i)=>(
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                <div style={{fontSize:11,color:C.accent}}>{fmtMoney(m.cost)}</div>
+                <div style={{width:"100%",background:C.accent,borderRadius:"4px 4px 0 0",
+                  height:Math.max(8,(m.cost/mx(mArr))*80),opacity:.85}}/>
+                <div style={{fontSize:10,color:C.muted,whiteSpace:"nowrap"}}>{m.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:12}}>Cost Per Part by Job Order</div>
+        <table style={{fontSize:13}}>
+          <thead>
+            <tr style={{borderBottom:`1px solid ${C.border}`}}>
+              {["Job Order","Parts","Tool Cost","Cost/Part"].map(h=>(
+                <th key={h} style={{textAlign:"left",padding:"6px 10px",color:C.muted,fontWeight:500}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {byJ.filter(r=>r.label&&r.label!=="Unknown").map((r,i)=>(
+              <tr key={i} style={{borderBottom:`1px solid ${C.border}22`}}>
+                <td style={{padding:"8px 10px",color:C.accent,fontWeight:600}}>{r.label}</td>
+                <td style={{padding:"8px 10px"}}>{r.parts.toLocaleString()}</td>
+                <td style={{padding:"8px 10px"}}>{fmtMoney(r.cost)}</td>
+                <td style={{padding:"8px 10px",color:r.parts>0?C.yellow:C.muted}}>
+                  {r.parts>0?"$"+(r.cost/r.parts).toFixed(3):"—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function BChart({title,rows,max,showCount}){
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}}>
+      <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>{title}</div>
+      {rows.length===0?<p style={{color:C.muted,fontSize:13}}>No data.</p>:
+        rows.slice(0,8).map((r,i)=>(
+          <div key={i} style={{marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:4}}>
+              <span>{r.label}{showCount?` (×${r.count})`:""}</span>
+              <span style={{color:C.accent}}>{fmtMoney(r.cost)}</span>
+            </div>
+            <div style={{height:6,background:C.border,borderRadius:3}}>
+              <div style={{width:`${(r.cost/max)*100}%`,height:"100%",background:C.accent,borderRadius:3,opacity:.8}}/>
+            </div>
+          </div>
+        ))
+      }
+    </div>
+  );
+}
+
+// ══ SETTINGS ═════════════════════════════════════════════════════════════════
+function Settings({tools,setTools,machines,setMachines,materials,setMats,reasons,setReasons,operators,setOps}){
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:24}}>
+      <div>
+        <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:700}}>Settings & Master Data</h2>
+        <p style={{color:C.muted,fontSize:13,margin:0}}>Manage tools, machines, materials and operators</p>
+      </div>
+      <ToolMaster tools={tools} setTools={setTools}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:16}}>
+        <ListEd title="Machines"  items={machines}  setItems={setMachines}  ph="e.g. Haas VF3"/>
+        <ListEd title="Materials" items={materials}  setItems={setMats}      ph="e.g. Hastelloy"/>
+        <ListEd title="Reasons"   items={reasons}    setItems={setReasons}   ph="e.g. Overheated"/>
+        <ListEd title="Operators" items={operators}  setItems={setOps}       ph="e.g. Nathan"/>
+      </div>
+    </div>
+  );
+}
+
+function ToolMaster({tools,setTools}){
+  const [ni,sni]=useState("");const [nc,snc]=useState("");const [nl,snl]=useState("");
+  const add=()=>{
+    if(!ni||!nc||!nl||tools.find(t=>t.id===ni))return;
+    setTools([...tools,{id:ni,cost:Number(nc),life:Number(nl)}]);
+    sni("");snc("");snl("");
+  };
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}}>
+      <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>Tool Master</div>
+      <table style={{fontSize:13,marginBottom:16}}>
+        <thead>
+          <tr style={{borderBottom:`1px solid ${C.border}`}}>
+            {["Tool ID","Cost ($)","Life (hrs)",""].map(h=>(
+              <th key={h} style={{textAlign:"left",padding:"6px 10px",color:C.muted,fontWeight:500}}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {tools.map((t,i)=>(
+            <tr key={i} style={{borderBottom:`1px solid ${C.border}22`}}>
+              <td style={{padding:"8px 10px",fontWeight:700,color:C.accent}}>{t.id}</td>
+              <td style={{padding:"8px 10px"}}>${t.cost}</td>
+              <td style={{padding:"8px 10px"}}>{t.life}h</td>
+              <td style={{padding:"8px 10px"}}>
+                <button onClick={()=>setTools(tools.filter(x=>x.id!==t.id))}
+                  style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>×</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <div style={{flex:"1 1 80px"}}><Inp value={ni} onChange={sni} placeholder="ID e.g. 44F"/></div>
+        <div style={{flex:"1 1 80px"}}><Inp value={nc} onChange={snc} placeholder="Cost $" type="number"/></div>
+        <div style={{flex:"1 1 80px"}}><Inp value={nl} onChange={snl} placeholder="Life hrs" type="number"/></div>
+        <button onClick={add} style={{background:C.accent,color:"#000",border:"none",borderRadius:8,
+          padding:"8px 20px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Add</button>
+      </div>
+    </div>
+  );
+}
+
+function ListEd({title,items,setItems,ph}){
+  const [v,sv]=useState("");
+  const add=()=>{if(!v||items.includes(v))return;setItems([...items,v]);sv("");};
+  return(
+    <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:18}}>
+      <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>{title}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12,maxHeight:200,overflowY:"auto"}}>
+        {items.map((item,i)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13}}>
+            <span>{item}</span>
+            <button onClick={()=>setItems(items.filter(x=>x!==item))}
+              style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>×</button>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:6}}>
+        <div style={{flex:1}}><Inp value={v} onChange={sv} placeholder={ph}/></div>
+        <button onClick={add} style={{background:C.border,color:C.text,border:"none",borderRadius:8,
+          padding:"8px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>+</button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
