@@ -346,6 +346,7 @@ function LiveStatus({liveStatus}){
 // ══ TOOL LOG ═════════════════════════════════════════════════════════════════
 function ToolLog({logs,setLogs,tools}){
   const [fM,sfM]=useState("");const [fT,sfT]=useState("");const [fR,sfR]=useState("");
+  const [editId,setEditId]=useState(null);
   const ms=[...new Set(logs.map(l=>l.machine))];
   const ts2=[...new Set(logs.map(l=>l.tool))];
   const rs=[...new Set(logs.map(l=>l.reason))];
@@ -368,7 +369,7 @@ function ToolLog({logs,setLogs,tools}){
         <table style={{fontSize:13}}>
           <thead>
             <tr style={{borderBottom:`1px solid ${C.border}`}}>
-              {["Date","Time","Machine","Job","Material","Tool","Hours","Cost","Reason","Operator","Parts","Status",""].map(h=>(
+              {["Date","Time","Machine","Job","Material","Tool","Hours","Cost","Reason","Operator","Parts","Status","Actions"].map(h=>(
                 <th key={h} style={{textAlign:"left",padding:"8px 12px",color:C.muted,fontWeight:500,whiteSpace:"nowrap"}}>{h}</th>
               ))}
             </tr>
@@ -392,6 +393,8 @@ function ToolLog({logs,setLogs,tools}){
                   <td style={{padding:"9px 12px",color:C.muted}}>{l.parts||0}</td>
                   <td style={{padding:"9px 12px"}}><Badge status={st}/></td>
                   <td style={{padding:"9px 12px"}}>
+                    <button onClick={()=>setEditId(l.id)}
+                      style={{background:"none",border:"none",color:C.accent,cursor:"pointer",fontSize:13,marginRight:8}}>Edit</button>
                     <button onClick={()=>setLogs(logs.filter(x=>x.id!==l.id))}
                       style={{background:"none",border:"none",color:C.muted,cursor:"pointer",fontSize:16}}>×</button>
                   </td>
@@ -403,6 +406,68 @@ function ToolLog({logs,setLogs,tools}){
         {filtered.length===0&&<p style={{color:C.muted,textAlign:"center",padding:40}}>No entries found.</p>}
       </div>
       <div style={{fontSize:12,color:C.muted,marginTop:12}}>{filtered.length} entries</div>
+      {editId&&<EditLogModal log={logs.find(l=>l.id===editId)} logs={logs} setLogs={setLogs}
+        tools={tools} onClose={()=>setEditId(null)}/>}
+    </div>
+  );
+}
+
+// ══ EDIT LOG MODAL ═══════════════════════════════════════════════════════════
+function EditLogModal({log,logs,setLogs,tools,onClose}){
+  const [f,sf]=useState({
+    machine:log.machine,job:log.job||"",material:log.material||"",
+    tool:log.tool,reason:log.reason,operator:log.operator,
+    parts:String(log.parts||""),hoursElapsed:String(log.hoursElapsed||"")
+  });
+  const F=k=>v=>sf(p=>({...p,[k]:v}));
+  const td=tools.find(t=>t.id===f.tool);
+  const ms=[...new Set(logs.map(l=>l.machine))];
+  const mats=[...new Set(logs.map(l=>l.material).filter(Boolean))];
+  const rs=[...new Set(logs.map(l=>l.reason))];
+  const ops=[...new Set(logs.map(l=>l.operator))];
+
+  const save=()=>{
+    if(!f.machine||!f.tool||!f.reason||!f.operator)return;
+    setLogs(logs.map(l=>l.id===log.id?{
+      ...l,machine:f.machine,job:f.job,material:f.material,
+      tool:f.tool,cost:td?.cost||l.cost,reason:f.reason,operator:f.operator,
+      parts:Number(f.parts)||0,hoursElapsed:Number(f.hoursElapsed)||0
+    }:l));
+    onClose();
+  };
+
+  return(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"#00000099",
+      display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}
+      onClick={onClose}>
+      <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:16,
+        padding:24,maxWidth:560,width:"90%",maxHeight:"90vh",overflowY:"auto"}}
+        onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <h3 style={{margin:0,fontSize:18,fontWeight:700}}>Edit Log Entry</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",color:C.muted,
+            cursor:"pointer",fontSize:24,lineHeight:1}}>×</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <Row label="Machine *"><Sel value={f.machine} onChange={F("machine")} opts={ms} placeholder="Select machine"/></Row>
+          <Row label="Job Order"><Inp value={f.job} onChange={F("job")} placeholder="e.g. JO-24581"/></Row>
+          <Row label="Material"><Sel value={f.material} onChange={F("material")} opts={mats} placeholder="Select material"/></Row>
+          <Row label="Tool *">
+            <Sel value={f.tool} onChange={F("tool")} opts={tools.map(t=>t.id)} placeholder="Select tool"/>
+            {td&&<div style={{fontSize:11,color:C.muted,marginTop:4}}>Cost: {fmtMoney(td.cost)} · Life: {td.life}h</div>}
+          </Row>
+          <Row label="Hours on Tool"><Inp value={f.hoursElapsed} onChange={F("hoursElapsed")} placeholder="e.g. 46" type="number"/></Row>
+          <Row label="Reason *"><Sel value={f.reason} onChange={F("reason")} opts={rs} placeholder="Select reason"/></Row>
+          <Row label="Operator *"><Sel value={f.operator} onChange={F("operator")} opts={ops} placeholder="Select operator"/></Row>
+          <Row label="Parts Produced"><Inp value={f.parts} onChange={F("parts")} placeholder="e.g. 250" type="number"/></Row>
+        </div>
+        <div style={{marginTop:24,display:"flex",gap:12}}>
+          <button onClick={save} style={{background:C.accent,color:"#000",border:"none",borderRadius:8,
+            padding:"10px 28px",fontSize:14,fontWeight:700,cursor:"pointer"}}>Save Changes</button>
+          <button onClick={onClose} style={{background:C.border,color:C.text,border:"none",borderRadius:8,
+            padding:"10px 28px",fontSize:14,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
